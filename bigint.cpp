@@ -149,7 +149,7 @@ BigInt &BigInt::operator-=(const BigInt &o)
     uddigit_t borrow = 0;
 
     //compare absolute values
-    int d = this->sign * BigInt::cmp(*this, o);
+    ddigit_t d = this->sign * BigInt::cmp(*this, o);
     if (d < 0)
     {
         this->numeral = std::move((o - *this).numeral);
@@ -166,21 +166,29 @@ BigInt &BigInt::operator-=(const BigInt &o)
 
     for (size_t i = 0; i < n; i++)
     {
-        uddigit_t diff = this->numeral[i] - (o.numeral[i] + borrow);
-        if (diff > this->numeral[i])
+        ddigit_t diff = this->numeral[i] - (o.numeral[i] + borrow);
+        if (diff < 0)
         {
-            diff = BigInt::DIGIT_MAX - diff;
+            diff = ((BigInt::DIGIT_MAX + 1) << 1) + diff;
             borrow = 1;
+        }
+        else
+        {
+            borrow = 0;
         }
         this->numeral[i] = diff;
     }
     for (size_t i = n; i < this->numeral.size() && borrow; i++)
     {
-        uddigit_t diff = this->numeral[i] - borrow;
-        if (diff > this->numeral[i])
+        ddigit_t diff = this->numeral[i] - borrow;
+        if (diff < 0)
         {
-            diff = BigInt::DIGIT_MAX - diff;
+            diff = ((BigInt::DIGIT_MAX + 1) << 1) + diff;
             borrow = 1;
+        }
+        else
+        {
+            borrow = 0;
         }
         this->numeral[i] = diff;
     }
@@ -242,7 +250,8 @@ BigInt &BigInt::operator<<=(const BigInt &o)
         return this->operator<<=(tmp);
     }
 
-    if(*this == 0){
+    if (*this == 0)
+    {
         return *this;
     }
 
@@ -251,8 +260,8 @@ BigInt &BigInt::operator<<=(const BigInt &o)
     while (tmp >= BigInt::DIGIT_BIT)
     {
         size_t length = this->numeral.size();
-        
-        digit_t msd = this->numeral[length - 1];// most significant digit
+
+        digit_t msd = this->numeral[length - 1]; // most significant digit
         for (size_t i = length - 1; i < length - 1; i--)
         {
             this->numeral[i] = this->numeral[i - 1];
@@ -262,21 +271,18 @@ BigInt &BigInt::operator<<=(const BigInt &o)
     }
 
     digit_t shift = tmp.numeral[0];
-    digit_t mask = ((1 << shift) - 1);
     size_t length = this->numeral.size();
-    
-    digit_t msd = this->numeral[length - 1];// most significant digit
+
+    digit_t msb = this->numeral[length - 1] >> (BigInt::DIGIT_BIT - shift); // most significant bits
     for (size_t i = length - 1; i < length - 1; i--)
     {
-        this->numeral[i] = (this->numeral[i] << shift) & ~mask;
-        this->numeral[i] |= (this->numeral[i - 1] << (BigInt::DIGIT_BIT - shift)) & mask;
+        this->numeral[i] = this->numeral[i] << shift;
+        this->numeral[i] |= this->numeral[i - 1] >> (BigInt::DIGIT_BIT - shift);
     }
-
-    this->numeral[0] <<=  shift;
-
-    if (this->numeral.front() == 0)
+    this->numeral[0] <<= shift;
+    if (msb != 0)
     {
-        this->numeral.erase(this->numeral.begin());
+        this->numeral.push_back(msb);
     }
 
     return *this;
@@ -297,7 +303,7 @@ BigInt &BigInt::operator>>=(const BigInt &o)
     while (tmp >= BigInt::DIGIT_BIT)
     {
         size_t length = this->numeral.size();
-        for (size_t i = 0; i < length- 1; i++)
+        for (size_t i = 0; i < length - 1; i++)
         {
             this->numeral[i] = this->numeral[i + 1];
         }
@@ -310,15 +316,14 @@ BigInt &BigInt::operator>>=(const BigInt &o)
     }
 
     digit_t shift = tmp.numeral[0];
-    digit_t mask = ((1 << shift) - 1);
     size_t length = this->numeral.size();
     for (size_t i = 0; i < length - 1; i++)
     {
-        this->numeral[i] = (this->numeral[i] >> shift) & mask;
-        this->numeral[i] |= (this->numeral[i + 1] << (BigInt::DIGIT_BIT - shift)) & ~mask;
+        this->numeral[i] = this->numeral[i] >> shift;
+        this->numeral[i] |= this->numeral[i + 1] << (BigInt::DIGIT_BIT - shift);
     }
-    
-    this->numeral[length -1] <<=  shift;
+
+    this->numeral[length - 1] >>= shift;
 
     if (this->numeral.back() == 0)
     {
