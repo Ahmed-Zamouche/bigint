@@ -1,51 +1,46 @@
 #include "bigint.hpp"
 
 #include <iostream>
+#include <random>
+#include <functional> //for std::function
+#include <algorithm>  //for std::generate_n
 
 using namespace std;
 using namespace bigint;
 
+int64_t random_int64()
+{
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<int64_t> dist(INT64_MIN, INT64_MAX);
+
+    return dist(gen);
+}
+
+std::string random_hex(size_t length)
+{
+    static std::string const default_chars = "0123456789abcdef";
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<size_t> dist{0, default_chars.length() - 1};
+
+    std::string ret;
+
+    std::generate_n(std::back_inserter(ret), length, [&] { return default_chars[dist(gen)]; });
+    return ret;
+}
+
 int main(int argc, char const *argv[])
 {
-    BigInt a(5);
-    BigInt b(3);
-    BigInt c("f123456789abcdef", 16);
-    BigInt d("fedcba9876543210fedcba9876543210", 16);
-    BigInt f("fedcba9876543210fedcba9876543210fedcba9876543211", 16);
-
-    BigInt e = ~a;
-    cout << "!(" << a << "): " << string(!a ? "true" : "false") << endl;
-
-    cout << a << " < " << b << " : " << string(a < b ? "true" : "false") << endl;
-    cout << a << " <= " << b << " : " << string(a <= b ? "true" : "false") << endl;
-    cout << a << " > " << b << " : " << string(a > b ? "true" : "false") << endl;
-    cout << a << " >= " << b << " : " << string(a >= b ? "true" : "false") << endl;
-    cout << a << " > " << c << " : " << string(a > c ? "true" : "false") << endl;
-    cout << 5 << " > " << c << " : " << string(5 > c ? "true" : "false") << endl;
-    cout << a << " + " << b << " : " << a + b << endl;
-    cout << a << " - " << b << " : " << a - b << endl;
-    cout << b << " - " << a << " : " << b - a << endl;
-
-    cout << d << " - " << f << " : " << d - f << endl;
-    cout << f << " - " << d << " : " << f - d << endl;
-
-    cout << -b << " + " << a << " : " << (-b) + (a) << endl;
-    cout << f << " + " << -d << " : " << (f) + (-d) << endl;
-
-    cout << -b << " - " << a << " : " << (-b) - (a) << endl;
-    cout << f << " - " << -d << " : " << (f) - (-d) << endl;
-
-    cout << d << " - " << d + 1 << " : " << (d + 1) - d << endl;
-
-    cout << " c = " << c << endl;
-    cout << f << " & " << d << " : " << (f & d) << endl;
-    cout << f << " & " << c << " : " << (f & c) << endl;
-
-    cout << f << " << " << c << " : " << (f & c) << endl;
-    cout << f << " << " << c << " : " << (f & c) << endl;
-    cout << f << " << " << c << " : " << (f & c) << endl;
-    cout << f << " << " << c << " : " << (f & c) << endl;
-    cout << f << " << " << c << " : " << (f & c) << endl;
-    cout << f << " << " << c << " : " << (f & c) << endl;
+    BigInt a(random_int64());
+    BigInt b(random_int64());
+    BigInt c(random_hex(64), 16);
+    BigInt d(random_hex(64), 16);
+    cout << a << '+' << b << '=' << a + b << endl;
+    cout << a << '-' << b << '=' << a - b << endl;
+    cout << "0x" << c << "n + "
+         << "0x" << d << "n == 0x" << c + d << 'n' << endl;
+    cout << "0x" << c << "n - "
+         << "0x" << d << "n == 0x" << c - d << 'n' << endl;
     return 0;
 }
