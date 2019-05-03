@@ -1,7 +1,7 @@
-#include <cstdint>
-#include <cstddef>
 #include <iostream>
 #include <vector>
+#include <cstdint>
+#include <cstddef>
 #include <climits>
 
 namespace bigint
@@ -24,8 +24,41 @@ class BigInt
 
     static const size_t DIGIT_BIT = sizeof(digit_t) * CHAR_BIT;
 
+    static const size_t KARATSUBA_THRESHOLD = 128;
+    static std::pair<digit_t, digit_t> add(digit_t a, digit_t b, digit_t d);
+    static std::pair<digit_t, digit_t> sub(digit_t a, digit_t b, digit_t d);
+
     std::vector<digit_t> numeral;
     static ddigit_t cmp(const BigInt &l, const BigInt &r);
+    static BigInt complement(const BigInt &l);
+
+    BigInt &baseMul(const BigInt &o);
+    BigInt &karatsubaMul(const BigInt &o);
+
+    inline BigInt &trim()
+    {
+        while (this->numeral.back() == 0)
+        {
+            this->numeral.pop_back();
+        }
+        return *this;
+    }
+    inline BigInt &pad(size_t n)
+    {
+        this->numeral.insert(this->numeral.end(), n, 0);
+        return *this;
+    }
+
+    static inline BigInt trim(const BigInt &o)
+    {
+        BigInt tmp(o);
+        return tmp.trim();
+    }
+    static inline BigInt pad(const BigInt &o, size_t n)
+    {
+        BigInt tmp(o);
+        return tmp.pad(n);
+    }
 
   public:
     BigInt();
@@ -33,6 +66,9 @@ class BigInt
     BigInt(std::string s);
     BigInt(std::string s, int base);
     BigInt(const BigInt &o);
+
+    static BigInt baseMul(const BigInt &l, const BigInt &r);
+    static BigInt karatsubaMul(BigInt &l, BigInt &r);
 
     BigInt &operator++();
     BigInt &operator--();
@@ -48,26 +84,32 @@ class BigInt
         operator--();
         return tmp;
     }
-    BigInt operator+()
+    inline BigInt operator+()
     {
         BigInt tmp(*this);
         return tmp;
     }
-    BigInt operator-()
+    inline BigInt operator-()
     {
         BigInt tmp(*this);
         tmp.sign = -this->sign;
         return tmp;
     }
-    BigInt operator~()
+    inline BigInt operator~()
     {
-        BigInt tmp = (*this + BigInt(1));
+        BigInt tmp = ((*this)++);
         tmp.sign = -tmp.sign;
         return tmp;
     }
-    bool operator!()
+    inline bool operator!()
     {
         return this->numeral.size() == 0;
+    }
+
+    inline BigInt &abs()
+    {
+        this->sign = BigInt::SIGN_POS;
+        return *this;
     }
 
     BigInt &operator+=(const BigInt &o);
@@ -300,6 +342,8 @@ class BigInt
     friend inline bool operator>=(const BigInt &l, const ddigit_t r) { return BigInt::cmp(l, BigInt(r)) >= 0; }
     friend inline bool operator>=(const ddigit_t l, const BigInt &r) { return BigInt::cmp(BigInt(l), r) >= 0; }
     friend inline bool operator>=(const BigInt &l, const BigInt &r) { return BigInt::cmp(l, r) >= 0; }
+
+    friend inline BigInt abs(const BigInt &o) { return (BigInt(o)).abs(); }
 
     ~BigInt();
     friend std::ostream &operator<<(std::ostream &os, const BigInt &dt);
