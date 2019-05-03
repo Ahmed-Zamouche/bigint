@@ -1,7 +1,7 @@
-#include <cstdint>
-#include <cstddef>
 #include <iostream>
 #include <vector>
+#include <cstdint>
+#include <cstddef>
 #include <climits>
 
 namespace bigint
@@ -24,8 +24,16 @@ class BigInt
 
     static const size_t DIGIT_BIT = sizeof(digit_t) * CHAR_BIT;
 
+    static const size_t KARATSUBA_THRESHOLD = 8;
+    static std::pair<digit_t, digit_t> add(digit_t a, digit_t b, digit_t d);
+    static std::pair<digit_t, digit_t> sub(digit_t a, digit_t b, digit_t d);
+
     std::vector<digit_t> numeral;
     static ddigit_t cmp(const BigInt &l, const BigInt &r);
+    static BigInt complement(const BigInt &l);
+
+    BigInt &baseMul(const BigInt &o);
+    BigInt &karatsubaMul(const BigInt &o);
 
   public:
     BigInt();
@@ -33,6 +41,10 @@ class BigInt
     BigInt(std::string s);
     BigInt(std::string s, int base);
     BigInt(const BigInt &o);
+
+    static BigInt baseMul(const BigInt &l, const BigInt &r);
+    static BigInt karatsubaMul(const BigInt &l, const BigInt &r);
+
 
     BigInt &operator++();
     BigInt &operator--();
@@ -61,7 +73,7 @@ class BigInt
     }
     BigInt operator~()
     {
-        BigInt tmp = (*this + BigInt(1));
+        BigInt tmp = ((*this)++);
         tmp.sign = -tmp.sign;
         return tmp;
     }
@@ -300,6 +312,13 @@ class BigInt
     friend inline bool operator>=(const BigInt &l, const ddigit_t r) { return BigInt::cmp(l, BigInt(r)) >= 0; }
     friend inline bool operator>=(const ddigit_t l, const BigInt &r) { return BigInt::cmp(BigInt(l), r) >= 0; }
     friend inline bool operator>=(const BigInt &l, const BigInt &r) { return BigInt::cmp(l, r) >= 0; }
+
+    friend inline BigInt abs(const BigInt &o)
+    {
+        BigInt tmp(o);
+        tmp.sign = BigInt::SIGN_POS;
+        return tmp;
+    }
 
     ~BigInt();
     friend std::ostream &operator<<(std::ostream &os, const BigInt &dt);

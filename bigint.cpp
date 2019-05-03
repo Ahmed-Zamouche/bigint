@@ -72,20 +72,38 @@ ddigit_t BigInt::cmp(const BigInt &l, const BigInt &r)
         return (l.sign) * ((ddigit_t)l.numeral.size() - (ddigit_t)r.numeral.size());
     }
 
-    for (size_t i = 0; i < l.numeral.size(); i++)
+    size_t length = l.numeral.size();
+    for (size_t i = length - 1; i < length; i--)
     {
 
         if (l.numeral[i] != r.numeral[i])
         {
-            return l.sign * (l.numeral[i] - r.numeral[i]);
+            return l.sign * ((ddigit_t)l.numeral[i] - (ddigit_t)r.numeral[i]);
         }
     }
     //both l and r are equal
     return 0;
 }
 
+BigInt BigInt::complement(const BigInt &o)
+{
+    return ((BigInt(1) << (o.numeral.size() * BigInt::DIGIT_BIT)) + o);
+}
+
+inline std::pair<digit_t, digit_t> BigInt::add(digit_t a, digit_t b, digit_t d)
+{
+    uddigit_t s = ((uddigit_t)a + b) + d;
+    return std::make_pair(s & BigInt::DIGIT_MAX, s > BigInt::DIGIT_MAX);
+}
+inline std::pair<digit_t, digit_t> BigInt::sub(digit_t a, digit_t b, digit_t d)
+{
+    ddigit_t s = ((ddigit_t)a - b) - d;
+    return std::make_pair(s >= 0 ? s : ((BigInt::DIGIT_MAX + 1) << 1) + s, s < 0);
+}
+
 BigInt &BigInt::operator+=(const BigInt &o)
 {
+
     if (this->sign != o.sign)
     {
         BigInt tmp(o);
@@ -93,45 +111,38 @@ BigInt &BigInt::operator+=(const BigInt &o)
         return operator-=(tmp);
     }
 
-    uddigit_t carry = 0;
-
     size_t n = std::min(this->numeral.size(), o.numeral.size());
+    size_t m = std::max(this->numeral.size(), o.numeral.size());
+
+    //std::vector<digit_t> sum(m, 0);
+
+    digit_t c = 0; //carry
 
     for (size_t i = 0; i < n; i++)
     {
-        uddigit_t sum = this->numeral[i] + (o.numeral[i] + carry);
-        carry = sum > BigInt::DIGIT_MAX;
-        this->numeral[i] = sum & BigInt::DIGIT_MAX;
+        std::tie(this->numeral[i], c) = BigInt::add(this->numeral[i], o.numeral[i], c);
     }
 
-    ddigit_t dlength = (ddigit_t)this->numeral.size() - (ddigit_t)o.numeral.size();
-
-    if (dlength > 0)
+    if (this->numeral.size() > n)
     {
-        for (size_t i = n; i < this->numeral.size() && carry; i++)
+        for (size_t i = n; i < m && c; i++)
         {
-            uddigit_t sum = this->numeral[i] + carry;
-            carry = sum > BigInt::DIGIT_MAX;
-            this->numeral[i] = sum & BigInt::DIGIT_MAX;
-        }
-    }
-    else if (dlength < 0)
-    {
-        for (size_t i = n; i < o.numeral.size(); i++)
-        {
-            uddigit_t sum = o.numeral[i] + carry;
-            carry = sum > BigInt::DIGIT_MAX;
-            this->numeral.push_back(sum & BigInt::DIGIT_MAX);
+            std::tie(this->numeral[i], c) = BigInt::add(this->numeral[i], 0, c);
         }
     }
     else
     {
-        ;
+        for (size_t i = n; i < m; i++)
+        {
+            digit_t sum;
+            std::tie(sum, c) = BigInt::add(0, o.numeral[i], c);
+            this->numeral.push_back(sum);
+        }
     }
 
-    if (carry != 0)
+    if (c != 0)
     {
-        this->numeral.push_back(carry);
+        this->numeral.push_back(c);
     }
 
     return *this;
@@ -146,12 +157,11 @@ BigInt &BigInt::operator-=(const BigInt &o)
         return operator+=(tmp);
     }
 
-    uddigit_t borrow = 0;
-
     //compare absolute values
     ddigit_t d = this->sign * BigInt::cmp(*this, o);
     if (d < 0)
     {
+
         this->numeral = std::move((o - *this).numeral);
         this->sign = -this->sign;
         return *this;
@@ -162,35 +172,17 @@ BigInt &BigInt::operator-=(const BigInt &o)
         return *this;
     }
 
-    size_t n = std::min(this->numeral.size(), o.numeral.size());
+    size_t n = o.numeral.size();     //min
+    size_t m = this->numeral.size(); //max
 
+    digit_t b = 0; //borrow
     for (size_t i = 0; i < n; i++)
     {
-        ddigit_t diff = this->numeral[i] - (o.numeral[i] + borrow);
-        if (diff < 0)
-        {
-            diff = ((BigInt::DIGIT_MAX + 1) << 1) + diff;
-            borrow = 1;
-        }
-        else
-        {
-            borrow = 0;
-        }
-        this->numeral[i] = diff;
+        std::tie(this->numeral[i], b) = BigInt::sub(this->numeral[i], o.numeral[i], b);
     }
-    for (size_t i = n; i < this->numeral.size() && borrow; i++)
+    for (size_t i = n; i < m && b; i++)
     {
-        ddigit_t diff = this->numeral[i] - borrow;
-        if (diff < 0)
-        {
-            diff = ((BigInt::DIGIT_MAX + 1) << 1) + diff;
-            borrow = 1;
-        }
-        else
-        {
-            borrow = 0;
-        }
-        this->numeral[i] = diff;
+        std::tie(this->numeral[i], b) = BigInt::sub(this->numeral[i], 0, b);
     }
 
     while (this->numeral.back() == 0)
@@ -199,33 +191,177 @@ BigInt &BigInt::operator-=(const BigInt &o)
     }
     return *this;
 }
+BigInt BigInt::baseMul(const BigInt &l, const BigInt &r)
+{
+    size_t lsize = l.numeral.size();
+    size_t rsize = r.numeral.size();
 
-BigInt &BigInt::operator*=(const BigInt &o) { return *this; }
+    BigInt mul;
+    mul.numeral = std::vector<digit_t>(lsize + rsize, 0);
+
+    for (size_t i = 0; i < lsize; i++)
+    {
+        uddigit_t carry = 0;
+        for (size_t j = 0; j < rsize; j++)
+        {
+            uddigit_t sum = (uddigit_t)l.numeral[i] * r.numeral[j] + (mul.numeral[i + j] + carry);
+            mul.numeral[i + j] = sum & BigInt::DIGIT_MAX;
+            carry = (sum >> BigInt::DIGIT_BIT);
+        }
+        if (carry != 0)
+        {
+            mul.numeral[i + r.numeral.size()] = carry;
+        }
+    }
+    mul.sign = l.sign * r.sign;
+
+    while (mul.numeral.back() == 0)
+    {
+        mul.numeral.pop_back();
+    }
+    return mul;
+}
+BigInt &BigInt::baseMul(const BigInt &o)
+{
+    this->numeral = std::move(BigInt::baseMul(*this, o).numeral);
+    return *this;
+}
+
+BigInt BigInt::karatsubaMul(const BigInt &l, const BigInt &r)
+{
+    size_t n = l.numeral.size();
+    if ((n % 2) == 1)
+    {
+        return BigInt::baseMul(l, r);
+    }
+    size_t k = n / 2;
+
+    BigInt l0, l1, l2;
+    BigInt r0, r1, r2;
+
+    l0.numeral.assign(l.numeral.begin() + 0, l.numeral.begin() + k);
+    l1.numeral.assign(l.numeral.begin() + k, l.numeral.begin() + n);
+
+    r0.numeral.assign(r.numeral.begin() + 0, r.numeral.begin() + k);
+    r1.numeral.assign(r.numeral.begin() + k, r.numeral.begin() + n);
+
+    l2 = l0 - l1;
+    r2 = r0 - r1;
+
+    int sign = -(l2.sign * r2.sign);
+    l2.sign = BigInt::SIGN_POS;
+    r2.sign = BigInt::SIGN_POS;
+
+    BigInt c0 = BigInt::karatsubaMul(l0, r0);
+    BigInt c1 = BigInt::karatsubaMul(l1, r1);
+    BigInt c2 = BigInt::karatsubaMul((l2), (r2));
+    BigInt c3 = BigInt::baseMul(sign, c2);
+
+    BigInt c;
+    c += c0;
+    c += (c0 + c1 + c3) << (k * BigInt::DIGIT_BIT);
+    c += c1 << (2 * k * BigInt::DIGIT_BIT);
+
+    return c;
+}
+
+BigInt &BigInt::karatsubaMul(const BigInt &o)
+{
+    this->numeral = std::move(BigInt::karatsubaMul(*this, o).numeral);
+    return *this;
+}
+
+BigInt &BigInt::operator*=(const BigInt &o)
+{
+
+    size_t n = this->numeral.size();
+    size_t m = o.numeral.size();
+    if (n == m && n >= KARATSUBA_THRESHOLD)
+    {
+        return this->karatsubaMul(o);
+    }
+    return this->baseMul(o);
+}
+
 BigInt &BigInt::operator/=(const BigInt &o) { return *this; }
 BigInt &BigInt::operator%=(const BigInt &o) { return *this; }
 
 BigInt &BigInt::operator&=(const BigInt &o)
 {
-    //FIXME::
-    size_t n = std::min(this->numeral.size(), o.numeral.size());
+
+    BigInt l = BigInt(*this);
+    BigInt r = BigInt(o);
+    if (l.sign == BigInt::SIGN_NEG)
+    {
+        l.numeral = std::move((BigInt::complement(l).numeral));
+    }
+    if (r.sign == BigInt::SIGN_NEG)
+    {
+        r.numeral = std::move((BigInt::complement(r).numeral));
+    }
+
+    size_t n = std::min(l.numeral.size(), r.numeral.size());
     for (size_t i = 0; i < n; i++)
     {
-        this->numeral[i] &= o.numeral[i];
+        l.numeral[i] &= r.numeral[i];
     }
-    this->numeral.erase(this->numeral.begin() + n, this->numeral.end());
+    if (this->sign == BigInt::SIGN_NEG && o.sign == BigInt::SIGN_NEG)
+    {
+        l.sign = BigInt::SIGN_NEG;
+        this->sign = BigInt::SIGN_NEG;
+        this->numeral = std::move((BigInt::complement(l).numeral));
+    }
+    else
+    {
+        this->numeral = std::move(l.numeral);
+        this->sign = BigInt::SIGN_POS;
+    }
+    this->numeral.erase(this->numeral.cbegin() + n, this->numeral.cend());
     return *this;
 }
 
 BigInt &BigInt::operator|=(const BigInt &o)
 {
-    //FIXME::
-    size_t n = std::min(this->numeral.size(), o.numeral.size());
+    BigInt l = BigInt(*this);
+    BigInt r = BigInt(o);
+    if (l.sign == BigInt::SIGN_NEG)
+    {
+        l.numeral = std::move((BigInt::complement(l).numeral));
+    }
+    if (r.sign == BigInt::SIGN_NEG)
+    {
+        r.numeral = std::move((BigInt::complement(r).numeral));
+    }
+
+    size_t n = std::min(l.numeral.size(), r.numeral.size());
 
     for (size_t i = 0; i < n; i++)
     {
-        this->numeral[i] |= o.numeral[i];
+        l.numeral[i] |= r.numeral[i];
     }
-    this->numeral.erase(this->numeral.begin() + n, this->numeral.end());
+
+    if (l.numeral.size() < r.numeral.size())
+    {
+        for (size_t i = n; i < r.numeral.size(); i++)
+        {
+            l.numeral.push_back(r.numeral[i]);
+        }
+    }
+    //FIXME:
+    if (this->sign == BigInt::SIGN_NEG || o.sign == BigInt::SIGN_NEG)
+    {
+        l.sign = BigInt::SIGN_NEG;
+        this->sign = BigInt::SIGN_NEG;
+        this->numeral = std::move((BigInt::complement(l).numeral));
+    }
+    else
+    {
+        this->numeral = std::move(l.numeral);
+        this->sign = BigInt::SIGN_POS;
+    }
+
+    this->numeral.erase(this->numeral.cbegin() + n, this->numeral.cend());
+
     return *this;
 }
 BigInt &BigInt::operator^=(const BigInt &o)
@@ -237,7 +373,7 @@ BigInt &BigInt::operator^=(const BigInt &o)
     {
         this->numeral[i] ^= o.numeral[i];
     }
-    this->numeral.erase(this->numeral.begin() + n, this->numeral.end());
+    this->numeral.erase(this->numeral.cbegin() + n, this->numeral.cend());
     return *this;
 }
 
@@ -255,34 +391,30 @@ BigInt &BigInt::operator<<=(const BigInt &o)
         return *this;
     }
 
-    //FIXME::
-    BigInt tmp(o);
-    while (tmp >= BigInt::DIGIT_BIT)
+    //FIXME:: use modulus instead
+    BigInt lshift(o);
+    while (lshift >= BigInt::DIGIT_BIT)
     {
+        this->numeral.insert(this->numeral.begin(), 0);
+        lshift -= BigInt::DIGIT_BIT;
+    }
+
+    if (lshift != 0)
+    {
+        digit_t shift = lshift.numeral[0];
         size_t length = this->numeral.size();
 
-        digit_t msd = this->numeral[length - 1]; // most significant digit
+        digit_t msb = this->numeral[length - 1] >> (BigInt::DIGIT_BIT - shift); // most significant bits
         for (size_t i = length - 1; i < length - 1; i--)
         {
-            this->numeral[i] = this->numeral[i - 1];
+            this->numeral[i] = this->numeral[i] << shift;
+            this->numeral[i] |= this->numeral[i - 1] >> (BigInt::DIGIT_BIT - shift);
         }
-        this->numeral.push_back(msd);
-        tmp -= BigInt::DIGIT_BIT;
-    }
-
-    digit_t shift = tmp.numeral[0];
-    size_t length = this->numeral.size();
-
-    digit_t msb = this->numeral[length - 1] >> (BigInt::DIGIT_BIT - shift); // most significant bits
-    for (size_t i = length - 1; i < length - 1; i--)
-    {
-        this->numeral[i] = this->numeral[i] << shift;
-        this->numeral[i] |= this->numeral[i - 1] >> (BigInt::DIGIT_BIT - shift);
-    }
-    this->numeral[0] <<= shift;
-    if (msb != 0)
-    {
-        this->numeral.push_back(msb);
+        this->numeral[0] <<= shift;
+        if (msb != 0)
+        {
+            this->numeral.push_back(msb);
+        }
     }
 
     return *this;
@@ -298,36 +430,34 @@ BigInt &BigInt::operator>>=(const BigInt &o)
     }
 
     //FIXME::
-    BigInt tmp(o);
+    BigInt rshift(o);
 
-    while (tmp >= BigInt::DIGIT_BIT)
+    while (rshift >= BigInt::DIGIT_BIT)
     {
-        size_t length = this->numeral.size();
-        for (size_t i = 0; i < length - 1; i++)
-        {
-            this->numeral[i] = this->numeral[i + 1];
-        }
-        this->numeral.erase(this->numeral.end());
-        if (*this == 0)
+        this->numeral.pop_back();
+        if (this->numeral.size() == 0)
         {
             return *this;
         }
-        tmp -= BigInt::DIGIT_BIT;
+        rshift -= BigInt::DIGIT_BIT;
     }
 
-    digit_t shift = tmp.numeral[0];
-    size_t length = this->numeral.size();
-    for (size_t i = 0; i < length - 1; i++)
+    if (rshift != 0)
     {
-        this->numeral[i] = this->numeral[i] >> shift;
-        this->numeral[i] |= this->numeral[i + 1] << (BigInt::DIGIT_BIT - shift);
-    }
+        digit_t shift = rshift.numeral[0];
+        size_t length = this->numeral.size();
+        for (size_t i = 0; i < length - 1; i++)
+        {
+            this->numeral[i] = this->numeral[i] >> shift;
+            this->numeral[i] |= this->numeral[i + 1] << (BigInt::DIGIT_BIT - shift);
+        }
 
-    this->numeral[length - 1] >>= shift;
+        this->numeral[length - 1] >>= shift;
 
-    if (this->numeral.back() == 0)
-    {
-        this->numeral.erase(this->numeral.end());
+        if (this->numeral.back() == 0)
+        {
+            this->numeral.pop_back();
+        }
     }
     return *this;
 }
@@ -354,6 +484,8 @@ std::ostream &operator<<(std::ostream &os, const BigInt &a)
             os << '-';
         }
 
+        os << "0x";
+
         os << std::hex << a.numeral[length - 1];
         for (size_t i = length - 2; i < length; i--)
         {
@@ -362,6 +494,7 @@ std::ostream &operator<<(std::ostream &os, const BigInt &a)
             //os << digit;
         }
         //os << '[' << std::dec << length << ']';
+        os << 'n';
     }
     else
     {
