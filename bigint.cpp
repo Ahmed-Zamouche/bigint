@@ -295,17 +295,7 @@ BigInt &BigInt::karatsubaMul(const BigInt &o)
 
 BigInt &BigInt::operator*=(const BigInt &o)
 {
-
     return this->karatsubaMul(o);
-    /*
-    size_t n = this->numeral.size();
-    size_t m = o.numeral.size();
-    if ((n + m) >= (2 * BigInt::KARATSUBA_THRESHOLD))
-    {
-        return this->karatsubaMul(o);    
-    }
-    return this->baseMul(o);
-    */
 }
 
 BigInt &BigInt::operator/=(const BigInt &o) { return *this; }
@@ -431,10 +421,11 @@ BigInt &BigInt::operator<<=(const BigInt &o)
 
     if (lshift != 0)
     {
+
         size_t length = this->numeral.size();
 
         digit_t msb = this->numeral[length - 1] >> (BigInt::DIGIT_BIT - lshift); // most significant bits
-        for (size_t i = length - 1; i < length - 1; i--)
+        for (size_t i = length - 1; i ; i--)
         {
             this->numeral[i] = this->numeral[i] << lshift;
             this->numeral[i] |= this->numeral[i - 1] >> (BigInt::DIGIT_BIT - lshift);
@@ -458,33 +449,38 @@ BigInt &BigInt::operator>>=(const BigInt &o)
         return this->operator>>=(tmp);
     }
 
-    //FIXME::
-    BigInt rshift(o);
-
-    rshift.numeral[0] &= ~(BigInt::DIGIT_BIT - 1);
-
-    while (rshift >= BigInt::DIGIT_BIT)
+    if (*this == 0 || o == 0)
     {
-        this->numeral.pop_back();
-        if (this->numeral.size() == 0)
-        {
-            return *this;
-        }
-        rshift -= BigInt::DIGIT_BIT;
+        return *this;
     }
 
-    digit_t rsh = (o.numeral[0] & (BigInt::DIGIT_BIT - 1));
+    //RangeError: Minimum BigInt size exceeded
+    assert(o.numeral.size() < 2);
 
-    if (rsh != 0)
+    digit_t rshift;
+    rshift = (o.numeral[0] & ~(BigInt::DIGIT_BIT - 1));
+    if (rshift != 0)
+    {
+        if ((rshift / BigInt::DIGIT_BIT) >= this->numeral.size())
+        {
+            this->numeral.clear();
+            return *this;
+        }
+        this->numeral.erase(this->numeral.begin(), this->numeral.begin() + (rshift / BigInt::DIGIT_BIT));
+    }
+
+    rshift = (o.numeral[0] & (BigInt::DIGIT_BIT - 1));
+
+    if (rshift != 0)
     {
         size_t length = this->numeral.size();
         for (size_t i = 0; i < length - 1; i++)
         {
-            this->numeral[i] = this->numeral[i] >> rsh;
-            this->numeral[i] |= this->numeral[i + 1] << (BigInt::DIGIT_BIT - rsh);
+            this->numeral[i] = this->numeral[i] >> rshift;
+            this->numeral[i] |= this->numeral[i + 1] << (BigInt::DIGIT_BIT - rshift);
         }
 
-        this->numeral[length - 1] >>= rsh;
+        this->numeral[length - 1] >>= rshift;
         this->trim();
     }
     return *this;
