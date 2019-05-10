@@ -5,9 +5,21 @@
 #include <string>
 #include <algorithm>
 #include <cassert>
+#include <fstream>
 
 namespace bigint
 {
+
+const int BigInt::SIGN_POS = +1;
+const int BigInt::SIGN_NEG = -1;
+
+const uddigit_t BigInt::DIGIT_MAX = (uddigit_t)((digit_t)-1);
+const uddigit_t BigInt::DDIGIT_MAX = BigInt::DIGIT_MAX + 1;
+const uddigit_t BigInt::BASE = BigInt::DDIGIT_MAX;
+
+const size_t BigInt::DIGIT_BIT = sizeof(digit_t) * CHAR_BIT;
+
+const size_t BigInt::KARATSUBA_THRESHOLD = 128;
 
 BigInt::BigInt()
 {
@@ -22,6 +34,19 @@ BigInt::BigInt(ddigit_t v)
         this->numeral.push_back(std::abs(v));
     }
 }
+BigInt::BigInt(uddigit_t v)
+{
+    this->sign = BigInt::SIGN_POS;
+    if (v != 0)
+    {
+        this->numeral.push_back((ddigit_t)(v & BigInt::DIGIT_MAX));
+        if ((ddigit_t)(v >> BigInt::DIGIT_BIT))
+        {
+            this->numeral.push_back((ddigit_t)(v >> BigInt::DIGIT_BIT));
+        }
+    }
+}
+
 BigInt::BigInt(std::string s, int base)
 {
     this->sign = BigInt::SIGN_POS;
@@ -221,7 +246,9 @@ BigInt BigInt::baseMul(const BigInt &l, const BigInt &r)
 }
 BigInt &BigInt::baseMul(const BigInt &o)
 {
-    this->numeral = std::move(BigInt::baseMul(*this, o).numeral);
+    BigInt mul = BigInt::baseMul(*this, o);
+    this->numeral = std::move(mul.numeral);
+    this->sign = mul.sign;
     return *this;
 }
 
@@ -290,6 +317,7 @@ BigInt &BigInt::karatsubaMul(const BigInt &o)
 {
     BigInt r(o);
     this->numeral = std::move(BigInt::karatsubaMul(*this, r).numeral);
+    this->sign = this->sign * o.sign;
     return *this;
 }
 
@@ -298,8 +326,202 @@ BigInt &BigInt::operator*=(const BigInt &o)
     return this->karatsubaMul(o);
 }
 
-BigInt &BigInt::operator/=(const BigInt &o) { return *this; }
-BigInt &BigInt::operator%=(const BigInt &o) { return *this; }
+std::pair<BigInt, BigInt> BigInt::baseUnsignedDiv(BigInt &r, BigInt &d)
+{
+
+//#define DEBUG_UDIV
+    ddigit_t diff = BigInt::cmp(r, d);
+
+    if (diff == 0)
+    {
+        return std::make_pair(1, 0);
+    }
+    else if (diff < 0)
+    {
+        return std::make_pair(0, r);
+    }
+    else
+    {
+        ;
+    }
+#ifdef DEBUG_UDIV
+    std::cout << "r    : " << r << std::endl;
+    std::cout << "d    : " << d << std::endl;
+#endif
+    //normalize divisor.
+    size_t k = 0;
+    if (d.numeral.back() < (BigInt::BASE >> 1))
+    {
+#ifdef DEBUG_UDIV
+        std::cout << "normalize  r, d: " << std::endl;
+#endif
+        digit_t tmp = d.numeral.back();
+        while (tmp < (BigInt::BASE >> 1))
+        {
+            tmp <<= 1;
+            k++;
+        }
+        d <<= k;
+        r <<= k;
+#ifdef DEBUG_UDIV
+        std::cout << "r    : " << r << std::endl;
+        std::cout << "d    : " << d << std::endl;
+#endif
+    }
+
+    size_t m = r.numeral.size() - d.numeral.size();
+#ifdef DEBUG_UDIV
+    std::cout << "m    : " << m << std::endl;
+    std::cout << "k    : " << k << std::endl;
+#endif
+    BigInt q;
+
+    if (r >= (d << (m * BigInt::DIGIT_BIT)))
+    {
+        q = (BigInt(1) << (m * BigInt::DIGIT_BIT));
+        r -= (d << (m * BigInt::DIGIT_BIT));
+#ifdef DEBUG_UDIV
+        std::cout << "r    : " << r << std::endl;
+
+#endif
+    }
+
+    BigInt di = (d << (m * BigInt::DIGIT_BIT));
+
+    for (size_t i = m - 1; i < m; i--)
+    {
+        di >>= BigInt::DIGIT_BIT;
+#ifdef DEBUG_UDIV
+        std::cout << "i    : " << i << std::endl;
+#endif
+
+        BigInt qi;
+        {
+            uddigit_t _qi = (uddigit_t)r.numeral.back();
+            _qi <<= BigInt::DIGIT_BIT;
+            _qi += *(r.numeral.cend() - 2);
+#ifdef DEBUG_UDIV
+            std::cout << "\tqi/=d: " << _qi << "/" << d.numeral.back() << std::endl;
+#endif
+            _qi /= d.numeral.back();
+#ifdef DEBUG_UDIV
+            std::cout << "\tqi: min(" << _qi << "," << BigInt::DIGIT_MAX << ")" << std::endl;
+#endif
+            _qi = std::min(_qi, BigInt::DIGIT_MAX);
+#ifdef DEBUG_UDIV
+            std::cout << "\tqi: " << _qi << std::endl;
+#endif
+            qi = BigInt(_qi);
+        }
+
+        r -= qi * di;
+#ifdef DEBUG_UDIV
+        std::cout << "\tr-=qi*di: " << r << std::endl;
+#endif
+        if (r < 0)
+        {
+#ifdef DEBUG_UDIV
+            std::cout << "\tr<0: !" << r << std::endl;
+#endif
+
+            while (1)
+            {
+                size_t inc = 0;
+                while (r < 0)
+                {
+#ifdef DEBUG_UDIV
+                    std::cout << "\t\t\t(r, qi, inc) = (" << r << ", " << qi << ", " << inc << ")" << std::endl;
+#endif
+                    r += di << inc;
+                    qi -= ((uddigit_t)1 << inc);
+                    inc++;
+#ifdef DEBUG_UDIV
+                    //std::cin.get();
+#endif
+                }
+                inc--;
+#ifdef DEBUG_UDIV
+                std::cout << "\t\t(r, qi, inc) = (" << r << ", " << qi << ", " << inc << ")" << std::endl;
+#endif
+                if (inc == 0)
+                {
+                    break;
+                }
+
+                r += di << inc;
+                qi += ((uddigit_t)1 << inc);
+            }
+#ifdef DEBUG_UDIV
+            std::cout << "\t\tr=: " << r << std::endl;
+            std::cout << "\t\tqi=: " << qi << std::endl;
+#endif
+        }
+
+        q += (qi << (i * BigInt::DIGIT_BIT));
+    }
+    r >>= k;
+#ifdef DEBUG_UDIV
+    std::cout << "q: " << q << std::endl;
+    std::cout << "r: " << r << std::endl;
+#endif
+    return std::make_pair(q, r);
+}
+
+std::pair<BigInt, BigInt> BigInt::baseDiv(const BigInt &n, const BigInt &d)
+{
+    assert(d != 0);
+
+    BigInt nn(n);
+    BigInt dd(d);
+
+    BigInt q;
+    BigInt r;
+
+    int n_sign = n.sign;
+    int d_sign = d.sign;
+
+    std::tie(q, r) = BigInt::baseUnsignedDiv(nn.abs(), dd.abs());
+
+    q.sign = n_sign * d_sign;
+
+    if (q.sign == BigInt::SIGN_NEG)
+    {
+        q--;
+        r = n_sign * (r + d);
+    }
+    return std::make_pair(q, r);
+}
+
+BigInt &BigInt::baseDiv(const BigInt &o)
+{
+    BigInt q;
+    BigInt r;
+    std::tie(q, r) = BigInt::baseDiv(*this, o);
+    this->numeral = std::move(q.numeral);
+    this->sign = q.sign;
+    return *this;
+}
+
+BigInt &BigInt::baseReduce(const BigInt &o)
+{
+    BigInt q;
+    BigInt r;
+
+    std::tie(q, r) = BigInt::baseDiv(*this, o);
+    this->numeral = std::move(r.numeral);
+    this->sign = r.sign;
+    return *this;
+}
+
+BigInt &BigInt::operator/=(const BigInt &o)
+{
+    return this->baseDiv(o);
+}
+
+BigInt &BigInt::operator%=(const BigInt &o)
+{
+    return this->baseReduce(o);
+}
 
 BigInt &BigInt::operator&=(const BigInt &o)
 {
@@ -425,7 +647,7 @@ BigInt &BigInt::operator<<=(const BigInt &o)
         size_t length = this->numeral.size();
 
         digit_t msb = this->numeral[length - 1] >> (BigInt::DIGIT_BIT - lshift); // most significant bits
-        for (size_t i = length - 1; i ; i--)
+        for (size_t i = length - 1; i; i--)
         {
             this->numeral[i] = this->numeral[i] << lshift;
             this->numeral[i] |= this->numeral[i - 1] >> (BigInt::DIGIT_BIT - lshift);
@@ -466,7 +688,7 @@ BigInt &BigInt::operator>>=(const BigInt &o)
             this->numeral.clear();
             return *this;
         }
-        this->numeral.erase(this->numeral.begin(), this->numeral.begin() + (rshift / BigInt::DIGIT_BIT));
+        this->numeral.erase(this->numeral.cbegin(), this->numeral.cbegin() + (rshift / BigInt::DIGIT_BIT));
     }
 
     rshift = (o.numeral[0] & (BigInt::DIGIT_BIT - 1));
@@ -482,6 +704,10 @@ BigInt &BigInt::operator>>=(const BigInt &o)
 
         this->numeral[length - 1] >>= rshift;
         this->trim();
+    }
+    if (this->sign == BigInt::SIGN_NEG)
+    {
+        (*this)--;
     }
     return *this;
 }
@@ -515,10 +741,7 @@ std::ostream &operator<<(std::ostream &os, const BigInt &a)
         {
             auto digit = a.numeral[i];
             os << std::setw(8) << std::setfill('0') << digit;
-            //os << digit;
         }
-        //os << '[' << std::dec << length << ']';
-        os << 'n';
     }
     else
     {

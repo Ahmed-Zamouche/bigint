@@ -9,29 +9,30 @@ else
 endif
 
 #OPT := -Og -ggdb
-OPT := -O3
+OPT := -O0 -g
+#OPT := -O3
 
 
 #CXX := clang++ -target x86_64-pc-windows-gnu
 CXX := g++
 
-CFLAGS := $(OPT) -Wall --std=c++11 \
-#-fsanitize=undefined -fsanitize=address
+CFLAGS := $(OPT) -Wall --std=c++17 -Wextra -pedantic\
 
 CXXFLAGS := $(CFLAGS)
 
 LFLAGS := 
 
+TEST_run:
+	powershell  ./test_runner.ps1
+
 TEST_bigint: bigint TEST_bigint.cpp
-	$(CXX) $(CXXFLAGS) $(LFLAGS) .\bigint.o .\TEST_bigint.cpp -o .\TEST_bigint.exe
+	$(CXX) $(CXXFLAGS) $(LFLAGS) .\bigint.o .\TEST_bigint.cpp -o .\TEST_bigint
 TEST_debug: TEST_bigint
-	gdb .\TEST_bigint.exe	
+	gdb .\TEST_bigint
 
 bigint: bigint.cpp bigint.hpp
 	$(CXX) $(CXXFLAGS) -c .\bigint.cpp -o .\bigint.o
 
-test: 
-	@node tester.js "$(shell .\TEST_bigint)"
 clean:
 	$(RM) *.o
 	$(RM) TEST_bigint.exe
